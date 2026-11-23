@@ -1,0 +1,566 @@
+diff --git a/frontend/app/(tabs)/care.tsx b/frontend/app/(tabs)/care.tsx
+index b4af0ef..e294120 100644
+--- a/frontend/app/(tabs)/care.tsx
++++ b/frontend/app/(tabs)/care.tsx
+@@ -1,14 +1,15 @@
+ import type React from "react";
+ import { useRouter } from "expo-router";
+ import { useCallback, useRef, useState } from "react";
+-import { Pressable, ScrollView, Text, View } from "react-native";
++import { Alert, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+ import { useSafeAreaInsets } from "react-native-safe-area-context";
+ 
+ import { CARE, CareForHome, CareToast } from "@/src/care/CareForHome";
+ import { HeritageCabinet } from "@/src/care/HeritageCabinet";
++import { addHouse, MAIN_HOUSE, removeHouse, renameHouse, switchHouse, useHouses } from "@/src/care/store";
+ import { CARE_CONFIG } from "@/src/care/rules";
+ import { fonts } from "@/src/fonts";
+-import { usesNativeTabs } from "@/src/navigation";
++import { tabBarSpace, usesNativeTabs } from "@/src/navigation";
+ import { makeStyles } from "@/src/theme";
+ 
+ // Care for Home in its own tab (Emjee 19 nov: inside My House it wasn't logical).
+@@ -32,16 +33,87 @@ export default function CareScreen() {
+   const scroller = useRef<React.ComponentRef<typeof ScrollView>>(null);
+   const toTop = useCallback(() => scroller.current?.scrollTo({ y: 0, animated: false }), []);
+   const closeToast = useCallback(() => setToast(null), []);
++  // More than one house (Emjee 23 nov): each with its own Housekeeping, named by you.
++  const houses = useHouses();
++  const [houseName, setHouseName] = useState<string | null>(null); // typing a new house
++  const [renaming, setRenaming] = useState<{ id: string; text: string } | null>(null);
++  const houseMenu = (id: string, name: string) => {
++    const buttons: { text: string; style?: "cancel" | "destructive"; onPress?: () => void }[] = [
++      { text: "Rename", onPress: () => setRenaming({ id, text: name }) },
++    ];
++    if (id !== MAIN_HOUSE)
++      buttons.push({
++        text: "Remove",
++        style: "destructive",
++        onPress: () =>
++          Alert.alert(`Remove ${name}?`, "Its rooms and tasks will be removed. This can't be undone.", [
++            { text: "Keep", style: "cancel" },
++            { text: "Remove", style: "destructive", onPress: () => removeHouse(id) },
++          ]),
++      });
++    buttons.push({ text: "Cancel", style: "cancel" });
++    Alert.alert(name, undefined, buttons);
++  };
+ 
+   return (
+     <View style={styles.screen}>
+       <ScrollView
+         ref={scroller}
+-        contentContainerStyle={[styles.content, { paddingTop: insets.top + 28, paddingBottom: usesNativeTabs ? insets.bottom + 96 : 40 }]}
++        contentContainerStyle={[styles.content, { paddingTop: insets.top + 28, paddingBottom: tabBarSpace(insets.bottom) }]}
+         showsVerticalScrollIndicator={false}
+       >
+         <Text style={styles.title}>Housekeeping</Text>
+ 
++        {houses ? (
++          <View style={styles.houses} testID="care-houses">
++            {houses.list.map((h) =>
++              renaming?.id === h.id ? (
++                <TextInput
++                  key={h.id}
++                  value={renaming.text}
++                  onChangeText={(t) => setRenaming({ id: h.id, text: t })}
++                  onSubmitEditing={() => { renameHouse(h.id, renaming.text); setRenaming(null); }}
++                  onBlur={() => { renameHouse(h.id, renaming.text); setRenaming(null); }}
++                  autoFocus
++                  maxLength={40}
++                  style={[styles.house, styles.houseInput]}
++                />
++              ) : (
++                <Pressable
++                  key={h.id}
++                  testID={`care-house-${h.id}`}
++                  onPress={() => { setToast(null); setRoomsReset((n) => n + 1); switchHouse(h.id); }}
++                  onLongPress={() => houseMenu(h.id, h.name)}
++                  style={[styles.house, houses.active === h.id && styles.houseOn]}
++                >
++                  <Text style={[styles.houseText, houses.active === h.id && styles.houseTextOn]}>{h.name}</Text>
++                </Pressable>
++              ),
++            )}
++            {houseName === null ? (
++              <Pressable testID="care-house-add" onPress={() => setHouseName("")} style={styles.houseAdd}>
++                <Text style={styles.houseAddText}>+ Add a house</Text>
++              </Pressable>
++            ) : (
++              <TextInput
++                testID="care-house-name"
++                value={houseName}
++                onChangeText={setHouseName}
++                placeholder="Name of the house"
++                onSubmitEditing={async () => { if (houseName.trim()) { setRoomsReset((n) => n + 1); await addHouse(houseName); } setHouseName(null); }}
++                onBlur={() => { if (!houseName.trim()) setHouseName(null); }}
++                returnKeyType="done"
++                autoFocus
++                maxLength={40}
++                style={[styles.house, styles.houseInput]}
++              />
++            )}
++          </View>
++        ) : null}
++        {houses && houses.list.length > 1 ? (
++          <Text style={styles.houseHint}>Hold a house to rename or remove it.</Text>
++        ) : null}
++
+         <View style={styles.parts} testID="care-parts">
+           {PARTS.map(([k, label]) => (
+             <Pressable
+@@ -92,9 +164,18 @@ const useStyles = makeStyles(() => ({
+   content: { paddingHorizontal: 24 },
+   band: { color: CARE.ink, fontFamily: fonts.sansBold, fontSize: 12, letterSpacing: 1.8, marginBottom: 2 },
+   title: { color: CARE.ink, fontFamily: fonts.display, fontSize: 29, marginBottom: 24 },
+-  parts: { flexDirection: "row", gap: 8, marginTop: 4, marginBottom: 16 },
++  parts: { flexDirection: "row", gap: 8, marginTop: 12, marginBottom: 16 },
+   part: { borderWidth: 1, borderColor: CARE.band, backgroundColor: CARE.card, borderRadius: 16, paddingVertical: 7, paddingHorizontal: 14 },
+   partOn: { backgroundColor: CARE.blue, borderColor: CARE.blue },
+   partText: { color: CARE.ink, fontFamily: fonts.sansMedium, fontSize: 15 },
+   partTextOn: { color: CARE.blueText },
++  houses: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: -12, marginBottom: 6 },
++  house: { borderWidth: 1, borderColor: CARE.band, backgroundColor: CARE.card, borderRadius: 16, paddingVertical: 6, paddingHorizontal: 12 },
++  houseOn: { backgroundColor: CARE.ink, borderColor: CARE.ink },
++  houseText: { color: CARE.ink, fontFamily: fonts.sansMedium, fontSize: 14 },
++  houseTextOn: { color: CARE.card },
++  houseInput: { minWidth: 160, color: CARE.ink, fontFamily: fonts.sans, fontSize: 14 },
++  houseAdd: { paddingVertical: 6, paddingHorizontal: 4 },
++  houseAddText: { color: CARE.ink, fontFamily: fonts.sansMedium, fontSize: 14, textDecorationLine: "underline" },
++  houseHint: { color: CARE.ink, opacity: 0.6, fontFamily: fonts.sans, fontSize: 13, marginBottom: 6 },
+ }));
+diff --git a/frontend/app/(tabs)/guide.tsx b/frontend/app/(tabs)/guide.tsx
+index ec8f1c3..0ddfa19 100644
+--- a/frontend/app/(tabs)/guide.tsx
++++ b/frontend/app/(tabs)/guide.tsx
+@@ -2,7 +2,7 @@ import { useRouter } from "expo-router";
+ import { ScrollView, Text, View } from "react-native";
+ import { useSafeAreaInsets } from "react-native-safe-area-context";
+ 
+-import { usesNativeTabs } from "@/src/navigation";
++import { tabBarSpace, usesNativeTabs } from "@/src/navigation";
+ 
+ import { ChoiceBars } from "@/src/components/choice-bars";
+ import { fonts } from "@/src/fonts";
+@@ -66,7 +66,7 @@ export default function GuideScreen() {
+       <ScrollView
+         contentContainerStyle={[
+           styles.content,
+-          { paddingTop: insets.top + 28, paddingBottom: usesNativeTabs ? insets.bottom + 96 : 40 },
++          { paddingTop: insets.top + 28, paddingBottom: 0 },
+         ]}
+         showsVerticalScrollIndicator={false}
+       >
+@@ -111,6 +111,8 @@ export default function GuideScreen() {
+         </>) : null}
+         {/* Three minutes and Listen to the house left the Guide (Emjee 18 nov): too thin for a place of
+             their own, and the core is already in Upon waking and the card The empty house. */}
++        {/* Room for the floating tab bar as a real block (tester 23 nov: padding alone did not show). */}
++        <View style={{ height: tabBarSpace(insets.bottom) }} testID="tab-bar-space" />
+       </ScrollView>
+     </View>
+   );
+diff --git a/frontend/app/(tabs)/home.tsx b/frontend/app/(tabs)/home.tsx
+index 3fc74b8..91acd1f 100644
+--- a/frontend/app/(tabs)/home.tsx
++++ b/frontend/app/(tabs)/home.tsx
+@@ -18,7 +18,7 @@ import { JOURNAL_TEXT, NOTE_QUESTIONS, NOTES_TEXT } from "@/src/my-home";
+ import { addNote, deleteNote, updateNoteWords, useNotes, type Note } from "@/src/notes";
+ import { cardOf, PALETTE, tintForSlug } from "@/src/palette";
+ import { findThought } from "@/src/thoughts";
+-import { usesNativeTabs } from "@/src/navigation";
++import { tabBarSpace, usesNativeTabs } from "@/src/navigation";
+ import { makeStyles, useTheme } from "@/src/theme";
+ import { useToast } from "@/src/components/toast";
+ 
+@@ -105,7 +105,7 @@ export default function MyHomeScreen() {
+           styles.content,
+           // On iOS 26 the tab bar floats over the page (Liquid Glass), so the
+           // last line (Settings) needs room to scroll clear of it (tester 17 nov).
+-          { paddingTop: insets.top + 28, paddingBottom: usesNativeTabs ? insets.bottom + 96 : 40 },
++          { paddingTop: insets.top + 28, paddingBottom: tabBarSpace(insets.bottom) },
+         ]}
+         showsVerticalScrollIndicator={false}
+         refreshControl={
+@@ -222,7 +222,7 @@ function VisitRow({
+         {editing ? (
+           <>
+             <Text style={styles.wordsLabel}>YOUR WORDS</Text>
+-            <TextInput value={word} onChangeText={setWord} multiline autoFocus style={styles.input} testID={`visit-edit-input-${v.id}`} />
++            <TextInput value={word} onChangeText={setWord} multiline autoFocus maxLength={280} style={styles.input} testID={`visit-edit-input-${v.id}`} />
+             <Pressable
+               testID={`visit-edit-save-${v.id}`}
+               onPress={() =>
+diff --git a/frontend/app/(tabs)/index.tsx b/frontend/app/(tabs)/index.tsx
+index 5c01123..9e2d9b4 100644
+--- a/frontend/app/(tabs)/index.tsx
++++ b/frontend/app/(tabs)/index.tsx
+@@ -5,7 +5,8 @@ import { Pressable, Text, View } from "react-native";
+ import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
+ import { useSafeAreaInsets } from "react-native-safe-area-context";
+ 
+-import { usesNativeTabs } from "@/src/navigation";
++import { tabBarSpace, usesNativeTabs } from "@/src/navigation";
++import { WeekAtHome } from "@/src/care/WeekAtHome";
+ 
+ import { useToday } from "@/src/api";
+ import { RoundedPhoto } from "@/src/components/photo";
+@@ -66,7 +67,7 @@ export default function TodayScreen() {
+   return (
+     <View style={styles.screen}>
+       <KeyboardAwareScrollView
+-        contentContainerStyle={[styles.content, { paddingBottom: usesNativeTabs ? insets.bottom + 96 : 40 }]}
++        contentContainerStyle={[styles.content, { paddingBottom: 0 }]}
+         bottomOffset={24}
+         showsVerticalScrollIndicator={false}
+       >
+@@ -146,8 +147,11 @@ export default function TodayScreen() {
+           </View>
+         </Pressable>
+ 
+-        {/* Housekeeping left Home again (Emjee 21 nov, evening): it has its own tab in the bar. */}
++        {/* This week at home (Emjee 23 nov): every Housekeeping task of the next seven days. */}
++        <WeekAtHome />
+ 
++        {/* Room for the floating tab bar as a real block (tester 23 nov: padding alone did not show). */}
++        <View style={{ height: tabBarSpace(insets.bottom) }} testID="tab-bar-space" />
+       </KeyboardAwareScrollView>
+     </View>
+   );
+diff --git a/frontend/app/your-home.tsx b/frontend/app/your-home.tsx
+index fba282d..521f8f3 100644
+--- a/frontend/app/your-home.tsx
++++ b/frontend/app/your-home.tsx
+@@ -43,18 +43,8 @@ const PARTS: Part[] = [
+       "My House| keeps your visits and the notes you write.",
+     ],
+   },
+-  {
+-    heading: "The turning year",
+-    paragraphs: [
+-      "The year has a day of its own, with winter for its night, spring for its morning, summer for midday and autumn for evening. That is why the months and the seasons each open in their own time.",
+-    ],
+-  },
+-  {
+-    heading: "Where to start",
+-    paragraphs: [
+-      "Start wherever you like, with one room or a single minute.",
+-    ],
+-  },
++  // The turning year and Where to start removed (Emjee 23 nov): they stood loose under the
++  // coloured blocks and Home already shows when the seasons open.
+ ];
+ 
+ const CLOSING = "See what you notice and keep what feels true.";
+diff --git a/frontend/src/care/WeekAtHome.tsx b/frontend/src/care/WeekAtHome.tsx
+new file mode 100644
+index 0000000..d4c9854
+--- /dev/null
++++ b/frontend/src/care/WeekAtHome.tsx
+@@ -0,0 +1,69 @@
++// This week at home (Emjee 23 nov): on Home, every Housekeeping task that comes around in the
++// next seven days, the soonest first: "today", "tomorrow", "in 3 days". Ticking a task off in
++// Housekeeping removes it here at once (both read the same saved state). A task you never did
++// yet only joins after its first tick, so a new list never starts with everything on "today".
++import Feather from "@react-native-vector-icons/feather";
++import { useRouter } from "expo-router";
++import { useEffect, useState } from "react";
++import { Pressable, Text, View } from "react-native";
++
++import { fonts } from "@/src/fonts";
++import { makeStyles } from "@/src/theme";
++
++import { CARE } from "./colors";
++import { weekTasks, whenText } from "./week";
++import { useCare, useHouses } from "./store";
++
++export function WeekAtHome() {
++  const { state } = useCare();
++  const houses = useHouses();
++  const router = useRouter();
++  const styles = useStyles();
++  // Re-read the clock now and then, so "tomorrow" becomes "today" without a restart.
++  const [now, setNow] = useState(Date.now());
++  useEffect(() => {
++    const t = setInterval(() => setNow(Date.now()), 60000);
++    return () => clearInterval(t);
++  }, []);
++  if (!state || !state.setup) return null;
++  const tasks = weekTasks(state, now);
++  const houseName = houses && houses.list.length > 1 ? houses.list.find((h) => h.id === houses.active)?.name : null;
++  return (
++    <Pressable
++      testID="week-at-home"
++      onPress={() => router.push("/care" as never)}
++      style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}
++    >
++      <View style={styles.head}>
++        <Text style={styles.label}>{houseName ? `THIS WEEK · ${houseName.toUpperCase()}` : "THIS WEEK AT HOME"}</Text>
++        <Feather name="chevron-right" size={18} color={CARE.ink} />
++      </View>
++      {tasks.length === 0 ? (
++        <Text style={styles.empty}>Nothing coming up this week.</Text>
++      ) : (
++        tasks.map((t, i) => (
++          <View key={t.id} style={[styles.row, i > 0 && styles.rowLine]} testID={`week-task-${t.id}`}>
++            <View style={{ flex: 1 }}>
++              <Text style={styles.name}>{t.name}</Text>
++              <Text style={styles.room}>{t.room}</Text>
++            </View>
++            <Text style={[styles.when, t.diff === 0 && styles.whenToday]}>{whenText(t.diff)}</Text>
++          </View>
++        ))
++      )}
++    </Pressable>
++  );
++}
++
++const useStyles = makeStyles(() => ({
++  card: { backgroundColor: CARE.bg, borderColor: CARE.band, borderWidth: 1, borderRadius: 18, padding: 18, marginTop: 14 },
++  head: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 },
++  label: { color: CARE.ink, fontFamily: fonts.sansBold, fontSize: 12, letterSpacing: 1.4 },
++  empty: { color: CARE.muted, fontFamily: fonts.serif, fontSize: 15, lineHeight: 22, marginTop: 4 },
++  row: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 9 },
++  rowLine: { borderTopWidth: 1, borderTopColor: CARE.band },
++  name: { color: CARE.ink, fontFamily: fonts.serif, fontSize: 16, lineHeight: 22 },
++  room: { color: CARE.muted, fontFamily: fonts.sans, fontSize: 13, marginTop: 1 },
++  when: { color: CARE.muted, fontFamily: fonts.sansMedium, fontSize: 14 },
++  whenToday: { color: CARE.ink, fontFamily: fonts.sansBold },
++}));
+diff --git a/frontend/src/care/store.ts b/frontend/src/care/store.ts
+index 979430c..15151b6 100644
+--- a/frontend/src/care/store.ts
++++ b/frontend/src/care/store.ts
+@@ -16,22 +16,59 @@ import { type CareState, emptyState, parseSaved, seen } from "./rules";
+ const KEY = "homebreath_care";
+ const BACKUP_KEY = "homebreath_care_backup";
+ 
++// More than one house (Emjee 23 nov): + Add a house, with a name you choose. Each house has
++// its own Housekeeping. The first house keeps the old keys, so nothing that was saved moves.
++export type House = { id: string; name: string };
++export type Houses = { list: House[]; active: string };
++const HOUSES_KEY = "homebreath_houses";
++export const MAIN_HOUSE = "main";
++const keyFor = (id: string) => (id === MAIN_HOUSE ? KEY : `${KEY}__${id}`);
++const backupFor = (id: string) => (id === MAIN_HOUSE ? BACKUP_KEY : `${BACKUP_KEY}__${id}`);
++
++function parseHouses(raw: string): Houses {
++  try {
++    const h = JSON.parse(raw) as Houses;
++    if (h && Array.isArray(h.list) && h.list.length && h.list.every((x) => x && typeof x.id === "string" && typeof x.name === "string")) {
++      const active = h.list.some((x) => x.id === h.active) ? h.active : h.list[0].id;
++      return { list: h.list, active };
++    }
++  } catch {
++    // fall through
++  }
++  return { list: [{ id: MAIN_HOUSE, name: "My house" }], active: MAIN_HOUSE };
++}
++
++let houses: Houses | null = null;
++const houseListeners = new Set<(h: Houses) => void>();
++async function loadHouses(): Promise<Houses> {
++  if (!houses) houses = parseHouses((await storage.getItem<string>(HOUSES_KEY, "")) ?? "");
++  return houses;
++}
++async function saveHouses(h: Houses) {
++  houses = h;
++  houseListeners.forEach((l) => l(h));
++  await storage.setItem(HOUSES_KEY, JSON.stringify(h));
++}
++
+ export async function loadCare(): Promise<CareState> {
+-  const main = parseSaved(await storage.getItem<string>(KEY, ""));
++  const id = (await loadHouses()).active;
++  const main = parseSaved(await storage.getItem<string>(keyFor(id), ""));
+   if (main) return main;
+-  const backup = parseSaved(await storage.getItem<string>(BACKUP_KEY, ""));
++  const backup = parseSaved(await storage.getItem<string>(backupFor(id), ""));
+   return backup ?? emptyState();
+ }
+ 
+ // Saves run one after the other, so a quick double tap never writes an older state last.
+ let queue: Promise<unknown> = Promise.resolve();
+ export function saveCare(s: CareState) {
++  // The house is fixed when the save is asked for, so switching house never writes into the wrong one.
++  const id = houses?.active ?? MAIN_HOUSE;
+   queue = queue.then(async () => {
+     // Only a copy that reads as a real saved state may become the backup. A damaged main
+     // copy is never written over a good backup.
+-    const before = await storage.getItem<string>(KEY, "");
+-    if (parseSaved(before)) await storage.setItem(BACKUP_KEY, before);
+-    await storage.setItem(KEY, JSON.stringify(s));
++    const before = await storage.getItem<string>(keyFor(id), "");
++    if (parseSaved(before)) await storage.setItem(backupFor(id), before);
++    await storage.setItem(keyFor(id), JSON.stringify(s));
+   });
+   return queue;
+ }
+@@ -79,3 +116,61 @@ export function useCare() {
+   // updateCare is a module function, so it is stable without useCallback.
+   return { state, update: updateCare };
+ }
++
++// ---- Houses --------------------------------------------------------------------------------
++async function reloadActive() {
++  await queue; // let pending saves of the previous house finish first
++  loading = null;
++  shared = null;
++  const s = await ensureLoaded();
++  listeners.forEach((l) => l(s));
++}
++
++export async function switchHouse(id: string) {
++  const h = await loadHouses();
++  if (h.active === id || !h.list.some((x) => x.id === id)) return;
++  await saveHouses({ ...h, active: id });
++  await reloadActive();
++}
++
++export async function addHouse(name: string): Promise<string | null> {
++  const n = name.trim();
++  if (!n) return null;
++  const h = await loadHouses();
++  const id = `h${Date.now().toString(36)}`;
++  await saveHouses({ list: [...h.list, { id, name: n.slice(0, 40) }], active: id });
++  await reloadActive();
++  return id;
++}
++
++export async function renameHouse(id: string, name: string) {
++  const n = name.trim();
++  if (!n) return;
++  const h = await loadHouses();
++  await saveHouses({ ...h, list: h.list.map((x) => (x.id === id ? { ...x, name: n.slice(0, 40) } : x)) });
++}
++
++// Removing a house removes its Housekeeping. The first house can be renamed, never removed.
++export async function removeHouse(id: string) {
++  if (id === MAIN_HOUSE) return;
++  const h = await loadHouses();
++  const list = h.list.filter((x) => x.id !== id);
++  const wasActive = h.active === id;
++  await saveHouses({ list, active: wasActive ? MAIN_HOUSE : h.active });
++  await queue;
++  await storage.setItem(keyFor(id), "");
++  await storage.setItem(backupFor(id), "");
++  if (wasActive) await reloadActive();
++}
++
++export function useHouses(): Houses | null {
++  const [h, setH] = useState<Houses | null>(houses);
++  useEffect(() => {
++    houseListeners.add(setH);
++    loadHouses().then(setH);
++    return () => {
++      houseListeners.delete(setH);
++    };
++  }, []);
++  return h;
++}
+diff --git a/frontend/src/care/week.test.mjs b/frontend/src/care/week.test.mjs
+new file mode 100644
+index 0000000..faba6ee
+--- /dev/null
++++ b/frontend/src/care/week.test.mjs
+@@ -0,0 +1,44 @@
++process.env.TZ = "Europe/Rome";
++// This week at home (23 nov). Run: node --test src/care/week.test.mjs
++import assert from "node:assert/strict";
++import { register } from "node:module";
++import { test } from "node:test";
++register("./ts-resolve.mjs", import.meta.url);
++const R = await import("./rules.ts");
++const M = await import("./my-rooms.ts");
++const W = await import("./week.ts");
++
++const T0 = new Date(2026, 10, 23, 9).getTime();
++function setUp() {
++  let s = R.emptyState();
++  s = { ...s, setup: R.DEFAULT_SETUP };
++  return s;
++}
++
++test("never-done tasks stay off the week list", () => {
++  const s = setUp();
++  assert.equal(W.weekTasks(s, T0).length, 0);
++});
++
++test("a weekly task done today is left out; done 3 days ago it shows in 4 days", () => {
++  const s0 = setUp();
++  const c = M.planCandidates(s0).find((x) => x.days === 7);
++  assert.ok(c, "a weekly task exists");
++  const s1 = { ...s0, last: { ...s0.last, [c.id]: T0 } };
++  assert.equal(W.weekTasks(s1, T0).some((t) => t.id === c.id), false);
++  const s2 = { ...s0, last: { ...s0.last, [c.id]: T0 - 3 * R.DAY } };
++  const t = W.weekTasks(s2, T0).find((x) => x.id === c.id);
++  assert.ok(t);
++  assert.equal(t.diff, 4);
++  assert.equal(W.whenText(t.diff), "in 4 days");
++});
++
++test("an overdue task is today, and the list is sorted soonest first", () => {
++  const s0 = setUp();
++  const cs = M.planCandidates(s0).filter((x) => x.days === 7).slice(0, 2);
++  const s = { ...s0, last: { ...s0.last, [cs[0].id]: T0 - 5 * R.DAY, [cs[1].id]: T0 - 30 * R.DAY } };
++  const list = W.weekTasks(s, T0);
++  assert.equal(list[0].diff, 0);
++  assert.equal(W.whenText(0), "today");
++  for (let i = 1; i < list.length; i++) assert.ok(list[i - 1].diff <= list[i].diff);
++});
+diff --git a/frontend/src/care/week.ts b/frontend/src/care/week.ts
+new file mode 100644
+index 0000000..24ad698
+--- /dev/null
++++ b/frontend/src/care/week.ts
+@@ -0,0 +1,29 @@
++// The list behind This week at home (Emjee 23 nov), kept apart from the screen so it can be tested.
++import { myRooms, planCandidates } from "./my-rooms";
++import { canDo, DAY, isManual, nextReady, snoozed, startOfTomorrow, type CareState } from "./rules";
++
++export type WeekTask = { id: string; name: string; room: string; at: number; diff: number };
++
++const dayStart = (t: number) => {
++  const d = new Date(t);
++  d.setHours(0, 0, 0, 0);
++  return d.getTime();
++};
++
++export function weekTasks(s: CareState, now: number): WeekTask[] {
++  const roomName = new Map(myRooms(s).map((r) => [r.key, r.name]));
++  const out: WeekTask[] = [];
++  for (const c of planCandidates(s)) {
++    if (isManual(c.days) || !s.last[c.id]) continue;
++    let at = canDo(s, c.id, c.days, now) ? now : nextReady(s, c.id, c.days);
++    if (at == null) continue;
++    if (snoozed(s, c.id, now) && at <= now) at = startOfTomorrow(now);
++    const diff = Math.round((dayStart(at) - dayStart(now)) / DAY);
++    if (diff > 6) continue;
++    out.push({ id: c.id, name: c.task.name, room: roomName.get(c.room) ?? c.room, at, diff: Math.max(0, diff) });
++  }
++  return out.sort((a, b) => a.diff - b.diff || a.room.localeCompare(b.room) || a.name.localeCompare(b.name));
++}
++
++export const whenText = (diff: number) => (diff <= 0 ? "today" : diff === 1 ? "tomorrow" : `in ${diff} days`);
++
+diff --git a/frontend/src/navigation.ts b/frontend/src/navigation.ts
+index 0e2c09a..c4e1761 100644
+--- a/frontend/src/navigation.ts
++++ b/frontend/src/navigation.ts
+@@ -2,5 +2,14 @@ import { Platform } from "react-native";
+ 
+ // iOS 26+ gets native tabs (Liquid Glass). Older iOS, Android and web use the
+ // classic JS <Tabs>. "unstable" refers only to the import path.
+-export const usesNativeTabs =
+-  Platform.OS === "ios" && parseInt(String(Platform.Version), 10) >= 26;
++// Off for everyone (Emjee 23 nov): the floating bar lay over the text. Every iPhone now gets the
++// fixed bar under the content. Set back to the line below to bring the floating bar back.
++// Platform.OS === "ios" && parseInt(String(Platform.Version), 10) >= 26;
++export const usesNativeTabs = false && Platform.OS === "ios";
++
++// Room under the last item for the floating tab bar on iOS 26+ (tester 23 nov: the last card
++// stayed under the bar). The safe-area inset can read 0 inside native tabs, so never count on
++// it alone: at least the home-indicator height plus the bar and its margin.
++export function tabBarSpace(insetBottom: number): number {
++  return usesNativeTabs ? Math.max(insetBottom, 34) + 120 : 40;
++}
