@@ -1,5 +1,5 @@
 diff --git a/frontend/app/(tabs)/care.tsx b/frontend/app/(tabs)/care.tsx
-index b4af0ef..e294120 100644
+index b4af0ef..d6ae960 100644
 --- a/frontend/app/(tabs)/care.tsx
 +++ b/frontend/app/(tabs)/care.tsx
 @@ -1,14 +1,15 @@
@@ -20,12 +20,23 @@ index b4af0ef..e294120 100644
  import { makeStyles } from "@/src/theme";
  
  // Care for Home in its own tab (Emjee 19 nov: inside My House it wasn't logical).
-@@ -32,16 +33,87 @@ export default function CareScreen() {
+@@ -21,6 +22,8 @@ const PARTS = CARE_CONFIG.PLANNER_ENABLED
+   : ([["rooms", "Rooms"], ["heritage", "Rewards"]] as const);
+ // 20 nov (Emjee): the album is called Cabinet of Curiosities, the tab Curiosities. The code
+ // keeps the key "heritage", so saved cards and moments stay where they are.
++const SHOW_HOUSES = false;
++
+ export default function CareScreen() {
+   const insets = useSafeAreaInsets();
+   const styles = useStyles();
+@@ -32,16 +35,89 @@ export default function CareScreen() {
    const scroller = useRef<React.ComponentRef<typeof ScrollView>>(null);
    const toTop = useCallback(() => scroller.current?.scrollTo({ y: 0, animated: false }), []);
    const closeToast = useCallback(() => setToast(null), []);
 +  // More than one house (Emjee 23 nov): each with its own Housekeeping, named by you.
-+  const houses = useHouses();
++  // Off for the launch (Emjee 23 nov: "te veel"). The code stays; set SHOW_HOUSES to true to bring it back.
++  const allHouses = useHouses();
++  const houses = SHOW_HOUSES ? allHouses : null;
 +  const [houseName, setHouseName] = useState<string | null>(null); // typing a new house
 +  const [renaming, setRenaming] = useState<{ id: string; text: string } | null>(null);
 +  const houseMenu = (id: string, name: string) => {
@@ -109,7 +120,7 @@ index b4af0ef..e294120 100644
          <View style={styles.parts} testID="care-parts">
            {PARTS.map(([k, label]) => (
              <Pressable
-@@ -92,9 +164,18 @@ const useStyles = makeStyles(() => ({
+@@ -92,9 +168,18 @@ const useStyles = makeStyles(() => ({
    content: { paddingHorizontal: 24 },
    band: { color: CARE.ink, fontFamily: fonts.sansBold, fontSize: 12, letterSpacing: 1.8, marginBottom: 2 },
    title: { color: CARE.ink, fontFamily: fonts.display, fontSize: 29, marginBottom: 24 },
@@ -161,9 +172,18 @@ index ec8f1c3..0ddfa19 100644
      </View>
    );
 diff --git a/frontend/app/(tabs)/home.tsx b/frontend/app/(tabs)/home.tsx
-index 3fc74b8..133bf4e 100644
+index 3fc74b8..792bc1f 100644
 --- a/frontend/app/(tabs)/home.tsx
 +++ b/frontend/app/(tabs)/home.tsx
+@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
+ import Feather from "@react-native-vector-icons/feather";
+ import { Image } from "expo-image";
+ import { useLocalSearchParams, useRouter } from "expo-router";
+-import { Alert, Dimensions, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from "react-native";
++import { ActionSheetIOS, Alert, Dimensions, Platform, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from "react-native";
+ import { useSafeAreaInsets } from "react-native-safe-area-context";
+ 
+ import ReanimatedSwipeable, {
 @@ -18,7 +18,7 @@ import { JOURNAL_TEXT, NOTE_QUESTIONS, NOTES_TEXT } from "@/src/my-home";
  import { addNote, deleteNote, updateNoteWords, useNotes, type Note } from "@/src/notes";
  import { cardOf, PALETTE, tintForSlug } from "@/src/palette";
@@ -173,7 +193,7 @@ index 3fc74b8..133bf4e 100644
  import { makeStyles, useTheme } from "@/src/theme";
  import { useToast } from "@/src/components/toast";
  
-@@ -105,7 +105,7 @@ export default function MyHomeScreen() {
+@@ -105,15 +105,24 @@ export default function MyHomeScreen() {
            styles.content,
            // On iOS 26 the tab bar floats over the page (Liquid Glass), so the
            // last line (Settings) needs room to scroll clear of it (tester 17 nov).
@@ -182,7 +202,39 @@ index 3fc74b8..133bf4e 100644
          ]}
          showsVerticalScrollIndicator={false}
          refreshControl={
-@@ -222,7 +222,7 @@ function VisitRow({
+           <RefreshControl refreshing={isRefetching} onRefresh={onRefresh} tintColor={colors.muted} />
+         }
+       >
+-        <Text style={styles.band}>YOURS</Text>
+-        <Text style={styles.title}>My House</Text>
++        {/* Settings sits up here, small, beside the title (Emjee 23 nov: under the journal it
++            was in the way). */}
++        <View style={styles.headRow}>
++          <View>
++            <Text style={styles.band}>YOURS</Text>
++            <Text style={styles.title}>My House</Text>
++          </View>
++          <Pressable testID="home-settings" onPress={() => router.push("/settings")} hitSlop={12} style={({ pressed }) => [styles.settingsTop, pressed && { opacity: 0.6 }]}>
++            <Text style={styles.settingsText}>Settings</Text>
++          </Pressable>
++        </View>
+ 
+         <>
+ 
+@@ -160,12 +169,6 @@ export default function MyHomeScreen() {
+         <Journal visits={data} onRemoveVisit={confirmRemove} styles={styles} />
+         </>
+ 
+-        {/* Reminders, preview and delete all live in Settings (ontwerpregels 16 nov). Only under
+-            My Rooms, and named for what it holds, so it never reads as part of Care for Home or
+-            the Heritage envelope (Emjee 18 nov). */}
+-        <Pressable testID="home-settings" onPress={() => router.push("/settings")} hitSlop={10} style={({ pressed }) => [styles.settings, pressed && { opacity: 0.6 }]}>
+-          <Text style={styles.settingsText}>Reminders and settings ›</Text>
+-        </Pressable>
+       </ScrollView>
+     </View>
+   );
+@@ -222,7 +225,7 @@ function VisitRow({
          {editing ? (
            <>
              <Text style={styles.wordsLabel}>YOUR WORDS</Text>
@@ -191,7 +243,30 @@ index 3fc74b8..133bf4e 100644
              <Pressable
                testID={`visit-edit-save-${v.id}`}
                onPress={() =>
-@@ -363,7 +363,11 @@ function JournalRow({ e, children, styles, startOpen }: { e: Entry; children: Re
+@@ -316,19 +319,12 @@ const MARK = {
+   card: "#6B6F5A",
+   own: "#7A6656", // taupe, your own words
+ };
++// Four colors, one for each choice under Show (Emjee 23 nov: twelve was too many).
+ function entryMark(e: Entry): string {
+-  if (e.kind === "visit") {
+-    const t = tintForSlug(e.visit.ritual_slug);
+-    if (t === PALETTE.rhythm) return MARK.rhythm;
+-    if (t === PALETTE.little) return MARK.little;
+-    if (t === PALETTE.moments) return MARK.moments;
+-    if (t === PALETTE.ceremony) return MARK.ceremony;
+-    return t.ink; // the seasons keep their own color
+-  }
++  if (e.kind === "visit") return MARK.rhythm; // every visit, whatever part of the Guide
+   if (e.note.kind === "flower" || e.note.kind === "page") return MARK.flower;
+   if (e.note.kind === "room") return MARK.room;
+-  if (e.note.kind === "card") return MARK.card;
+-  return MARK.own;
++  return MARK.own; // your own words and thought cards
+ }
+ 
+ function entryKind(e: Entry): string {
+@@ -363,7 +359,11 @@ function JournalRow({ e, children, styles, startOpen }: { e: Entry; children: Re
        >
          <View style={{ flex: 1, gap: 3 }}>
            <Text style={[styles.entryKind, { color: mark }]}>{entryKind(e)}</Text>
@@ -204,6 +279,119 @@ index 3fc74b8..133bf4e 100644
          </View>
          <Feather name={open ? "chevron-up" : "chevron-down"} size={20} color={mark} />
        </Pressable>
+@@ -434,7 +434,14 @@ function Journal({
+   const [filter, setFilter] = useState<JournalFilter>("all");
+   const entries = filter === "all" ? allEntries : allEntries.filter((e) => entryFilter(e) === filter);
+   // Days are folded; tap a day to open it (tester 23 nov). Kept in My House › opens its own day.
+-  const [openDays, setOpenDays] = useState<Set<string>>(new Set());
++  // The most recent day starts open, so the journal never looks empty (23 nov).
++  const [openDays, setOpenDays] = useState<Set<string>>(() => new Set(allEntries.length ? [allEntries[0].day] : []));
++  const firstOpened = useRef(allEntries.length > 0);
++  useEffect(() => {
++    if (firstOpened.current || !allEntries.length) return;
++    firstOpened.current = true;
++    setOpenDays((o) => new Set([...o, allEntries[0].day]));
++  }, [allEntries]);
+   useEffect(() => {
+     if (!openParam) return;
+     const hit = allEntries.find((e) => e.id === `n-${openParam}` || e.id === `v-${openParam}`);
+@@ -492,24 +499,32 @@ function Journal({
+       </View>
+ 
+ 
++      {/* One quiet choice instead of a row of buttons (Emjee 23 nov: the names side by side,
++          and Flowers on a line of its own, did not look good). */}
+       {allEntries.length > 0 ? (
+-        <View style={styles.filters} testID="journal-filters">
+-          {JOURNAL_FILTERS.map((f) => {
+-            const on = filter === f.key;
+-            return (
+-              <Pressable
+-                key={f.key}
+-                testID={`journal-filter-${f.key}`}
+-                onPress={() => setFilter(f.key)}
+-                accessibilityRole="button"
+-                accessibilityState={{ selected: on }}
+-                style={({ pressed }) => [styles.filterChip, on && styles.filterChipOn, pressed && { opacity: 0.7 }]}
+-              >
+-                <Text style={[styles.filterText, on && styles.filterTextOn]}>{f.label}</Text>
+-              </Pressable>
+-            );
+-          })}
+-        </View>
++        <Pressable
++          testID="journal-filters"
++          accessibilityRole="button"
++          onPress={() => {
++            const labels = JOURNAL_FILTERS.map((f) => f.label);
++            if (Platform.OS === "ios") {
++              ActionSheetIOS.showActionSheetWithOptions(
++                { options: [...labels, "Cancel"], cancelButtonIndex: labels.length, title: "Show in your journal" },
++                (i) => { if (i < labels.length) setFilter(JOURNAL_FILTERS[i].key); },
++              );
++            } else {
++              Alert.alert("Show in your journal", undefined, [
++                ...JOURNAL_FILTERS.map((f) => ({ text: f.label, onPress: () => setFilter(f.key) })),
++                { text: "Cancel", style: "cancel" as const },
++              ]);
++            }
++          }}
++          hitSlop={10}
++          style={({ pressed }) => [styles.showRow, pressed && { opacity: 0.6 }]}
++        >
++          <Text style={styles.showText}>{`Show: ${JOURNAL_FILTERS.find((f) => f.key === filter)?.label ?? ""}`}</Text>
++          <Feather name="chevron-down" size={16} color={T.ink} />
++        </Pressable>
+       ) : null}
+ 
+       {allEntries.length === 0 ? (
+@@ -527,7 +542,13 @@ function Journal({
+               style={({ pressed }) => [styles.dayToggle, pressed && { opacity: 0.7 }]}
+             >
+               <DayHead day={day} styles={styles} />
+-              <Feather name={openDays.has(day) ? "chevron-up" : "chevron-down"} size={20} color={T.ink} />
++              {/* What the day holds, folded: one small dot per entry in its own color (23 nov). */}
++              <View style={styles.dayDots}>
++                {openDays.has(day) ? null : items.slice(0, 6).map((e) => (
++                  <View key={e.id} style={[styles.dayDot, { backgroundColor: entryMark(e) }]} />
++                ))}
++                <Feather name={openDays.has(day) ? "chevron-up" : "chevron-down"} size={20} color={T.ink} />
++              </View>
+             </Pressable>
+             {openDays.has(day) ? items.map((e) => (
+               <JournalRow key={e.id} e={e} styles={styles} startOpen={e.id === `n-${openParam}` || e.id === `v-${openParam}`}>
+@@ -672,7 +693,8 @@ const useStyles = makeStyles((colors) => ({
+     lineHeight: 27,
+     marginBottom: 28,
+   },
+-  settings: { alignSelf: "center", marginTop: 44 },
++  headRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" },
++  settingsTop: { paddingTop: 4 },
+   settingsText: { color: colors.mutedStrong, fontFamily: fonts.sansMedium, fontSize: 14 },
+   emptyText: {
+     color: colors.muted,
+@@ -736,13 +758,17 @@ const useStyles = makeStyles((colors) => ({
+   // Journal (22 nov): the day as the top of a diary page, then one folded line per entry.
+   dayBlock: { marginTop: 16 },
+   dayToggle: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingRight: 4 },
+-  filters: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 20 },
+-  filterChip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, borderWidth: 1, borderColor: T.band },
++  showRow: { flexDirection: "row", alignItems: "center", gap: 6, alignSelf: "flex-start", marginTop: 20 },
++  showText: { color: T.ink, fontFamily: fonts.sansMedium, fontSize: 15 },
++  filters: { flexDirection: "row", flexWrap: "nowrap", gap: 6, marginTop: 20 },
++  filterChip: { paddingHorizontal: 10, paddingVertical: 7, borderRadius: 999, borderWidth: 1, borderColor: T.band },
+   filterChipOn: { backgroundColor: T.ink, borderColor: T.ink },
+-  filterText: { color: T.ink, fontFamily: fonts.sansMedium, fontSize: 14 },
++  filterText: { color: T.ink, fontFamily: fonts.sansMedium, fontSize: 13 },
+   filterTextOn: { color: colors.surface },
+   dayHead: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 10 },
+-  dayNum: { color: T.ink, fontFamily: fonts.display, fontSize: 38, lineHeight: 44 },
++  dayNum: { color: T.ink, fontFamily: fonts.display, fontSize: 38, lineHeight: 44, width: 54 },
++  dayDots: { flexDirection: "row", alignItems: "center", gap: 5 },
++  dayDot: { width: 8, height: 8, borderRadius: 4 },
+   dayWeek: { color: T.ink, fontFamily: fonts.sansBold, fontSize: 11, letterSpacing: 1.6 },
+   dayMonth: { color: colors.mutedStrong, fontFamily: fonts.serif, fontSize: 15, lineHeight: 20 },
+   row: { backgroundColor: cardOf(T), borderRadius: 14, borderLeftWidth: 6, marginBottom: 10, overflow: "hidden" },
 diff --git a/frontend/app/(tabs)/index.tsx b/frontend/app/(tabs)/index.tsx
 index 5c01123..9e2d9b4 100644
 --- a/frontend/app/(tabs)/index.tsx
@@ -340,6 +528,94 @@ index 0000000..d4c9854
 +  when: { color: CARE.muted, fontFamily: fonts.sansMedium, fontSize: 14 },
 +  whenToday: { color: CARE.ink, fontFamily: fonts.sansBold },
 +}));
+diff --git a/frontend/src/care/my-rooms.ts b/frontend/src/care/my-rooms.ts
+index 67ff303..6a5b272 100644
+--- a/frontend/src/care/my-rooms.ts
++++ b/frontend/src/care/my-rooms.ts
+@@ -9,6 +9,24 @@ import { type CareState, type PlanCandidate, type RevisitRoom, copyTaskId, hasFe
+ // but not on your list yet (off by default, or for something you didn't tick).
+ export type MyRoom = CareRoom & { own?: boolean; removedTasks: CareTask[]; moreTasks: CareTask[] };
+ 
++// Starting rhythm for the former "When it's needed" tasks (Emjee 23 nov), in days.
++export const NEED_DAYS: Record<string, number> = {
++  "laundry.need.do-a-load-of-laundry": 3,
++  "laundry.need.put-away-the-clean-laundry": 3,
++  "laundry.need.empty-the-dryer-lint-screen": 3,
++  "house.need.clean-the-stove-glass": 14,
++  "kitchen.need.run-the-dishwasher": 1,
++  "kitchen.need.empty-the-dishwasher": 1,
++  "kitchen.need.take-out-the-rubbish": 3,
++  "kitchen.need.do-the-dishes-by-hand": 1,
++  "bathroom.need.fresh-towels": 4,
++  "bathroom.need.restock-toilet-paper-and-soap": 7,
++  "bathroom.need.unclog-the-shower-drain": 30,
++  "bathroom.need.deep-clean-the-grout": 90,
++  "powder.need.change-the-hand-towel": 3,
++  "powder.need.restock-toilet-paper-and-soap": 7,
++};
++
+ export function allRooms(s: CareState): MyRoom[] {
+   // Your own minutes (Look over your rooms) replace the library's.
+   const withMinutes = <T extends { id: string; min?: number }>(t: T): T => (s.minutes[t.id] ? { ...t, min: s.minutes[t.id] } : t);
+@@ -25,10 +43,21 @@ export function allRooms(s: CareState): MyRoom[] {
+         ...lib.filter((t) => r.key === RHYTHM_ROOM || isOn(s, t)).map((t) => (s.renamed[t.id] ? { ...t, name: s.renamed[t.id] } : t)),
+         // Own tasks under Extra tasks carry their group: "house:pets" (20 nov).
+         ...s.ownTasks.filter((t) => t.room === key || (key === "house" && t.room.startsWith("house:"))),
++        ...r.need
++          .filter((n) => !n.when || hasFeature(s, n.when))
++          .map((n) => ({ id: id(n.id), name: s.renamed[id(n.id)] ?? n.name, days: NEED_DAYS[n.id] ?? 7 }))
++          .filter((t) => !s.removed.includes(t.id)),
+       ].map(withMinutes),
+-      need: r.need.filter((n) => !n.when || hasFeature(s, n.when)).map((n) => ({ ...n, id: id(n.id) })),
++      // "When it's needed" is gone (Emjee 23 nov: too unclear). Those tasks are ordinary tasks
++      // now, with a starting rhythm you change under ⋯ › How often. Same ids, so history stays.
++      need: [],
+       habits: r.habits.map((h) => ({ ...h, id: id(h.id) })),
+-      removedTasks: lib.filter((t) => s.removed.includes(t.id)),
++      removedTasks: [
++        ...lib.filter((t) => s.removed.includes(t.id)),
++        ...r.need
++          .map((n) => ({ id: id(n.id), name: n.name, days: NEED_DAYS[n.id] ?? 7 }))
++          .filter((t) => s.removed.includes(t.id)),
++      ],
+       moreTasks: r.key === RHYTHM_ROOM ? [] : lib.filter((t) => !isOn(s, t) && !s.removed.includes(t.id)),
+     };
+   };
+diff --git a/frontend/src/care/rules.test.mjs b/frontend/src/care/rules.test.mjs
+index 8b8e9b9..67a0213 100644
+--- a/frontend/src/care/rules.test.mjs
++++ b/frontend/src/care/rules.test.mjs
+@@ -1050,7 +1050,7 @@ test("no task twice in the same room (pet hair, stovetop, bathroom sink)", () =>
+ test("laundry: with a washing machine, also without a laundry room; never without one", () => {
+   const washer = { ...emptyState(), setup: { ...DEFAULT_SETUP, features: [...DEFAULT_SETUP.features, "washer"] } };
+   const noRoom = toggleRoom(washer, "laundry");
+-  const needs = (s) => myRooms(s).flatMap((r) => (r.need ?? []).map((t) => t.name));
++  const needs = (s) => myRooms(s).flatMap((r) => r.care.map((t) => t.name)); // need tasks are care tasks now (23 nov)
+   assert.ok(!myRooms(noRoom).some((r) => r.key === "laundry"));
+   assert.ok(needs(noRoom).includes("Do a load of laundry"));
+   assert.ok(!needs({ ...emptyState(), setup: DEFAULT_SETUP }).includes("Do a load of laundry"));
+@@ -1185,9 +1185,18 @@ test("walk-in closet stays hidden for someone who answered the setup before it e
+ test("the dryer lint screen: with a dryer only, in the laundry room when you have one", () => {
+   let s = { ...emptyState(), setup: { household: "two", pets: [], features: ["washer", "dryer"] } };
+   const laundry = myRooms(s).find((r) => r.key === "laundry");
+-  assert.ok(laundry.need.some((t) => t.id === "laundry.need.empty-the-dryer-lint-screen"));
++  assert.ok(laundry.care.some((t) => t.id === "laundry.need.empty-the-dryer-lint-screen"));
+   s = { ...s, setup: { ...s.setup, features: ["washer"] } };
+-  assert.ok(!myRooms(s).some((r) => r.need.some((t) => t.id === "laundry.need.empty-the-dryer-lint-screen")), "no dryer, no lint screen");
++  assert.ok(!myRooms(s).some((r) => r.care.some((t) => t.id === "laundry.need.empty-the-dryer-lint-screen")), "no dryer, no lint screen");
+   s = toggleRoom({ ...s, setup: { ...s.setup, features: ["dryer"] } }, "laundry");
+-  assert.ok(myRooms(s).find((r) => r.key === "house").need.some((t) => t.id === "laundry.need.empty-the-dryer-lint-screen"), "without a laundry room it stays in Extra tasks");
++  assert.ok(myRooms(s).find((r) => r.key === "house").care.some((t) => t.id === "laundry.need.empty-the-dryer-lint-screen"), "without a laundry room it stays in Extra tasks");
++});
++
++test("former When it's needed tasks are ordinary tasks with a starting rhythm (23 nov)", () => {
++  const s = { ...emptyState(), setup: DEFAULT_SETUP };
++  const bath = myRooms(s).find((r) => r.key === "bathroom");
++  const towels = bath.care.find((t) => t.id === "bathroom.need.fresh-towels");
++  assert.ok(towels, "towels are in the bathroom list");
++  assert.equal(towels.days, 4);
++  assert.equal(bath.need.length, 0);
+ });
 diff --git a/frontend/src/care/store.ts b/frontend/src/care/store.ts
 index 979430c..15151b6 100644
 --- a/frontend/src/care/store.ts
