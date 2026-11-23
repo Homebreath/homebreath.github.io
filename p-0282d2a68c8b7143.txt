@@ -1,0 +1,595 @@
+diff --git a/frontend/app/(tabs)/guide.tsx b/frontend/app/(tabs)/guide.tsx
+index fd4cca9..ec8f1c3 100644
+--- a/frontend/app/(tabs)/guide.tsx
++++ b/frontend/app/(tabs)/guide.tsx
+@@ -2,6 +2,8 @@ import { useRouter } from "expo-router";
+ import { ScrollView, Text, View } from "react-native";
+ import { useSafeAreaInsets } from "react-native-safe-area-context";
+ 
++import { usesNativeTabs } from "@/src/navigation";
++
+ import { ChoiceBars } from "@/src/components/choice-bars";
+ import { fonts } from "@/src/fonts";
+ import { PALETTE, type Tint } from "@/src/palette";
+@@ -64,7 +66,7 @@ export default function GuideScreen() {
+       <ScrollView
+         contentContainerStyle={[
+           styles.content,
+-          { paddingTop: insets.top + 28, paddingBottom: 40 },
++          { paddingTop: insets.top + 28, paddingBottom: usesNativeTabs ? insets.bottom + 96 : 40 },
+         ]}
+         showsVerticalScrollIndicator={false}
+       >
+diff --git a/frontend/app/(tabs)/home.tsx b/frontend/app/(tabs)/home.tsx
+index 0abfbe4..3fc74b8 100644
+--- a/frontend/app/(tabs)/home.tsx
++++ b/frontend/app/(tabs)/home.tsx
+@@ -9,7 +9,7 @@ import ReanimatedSwipeable, {
+   type SwipeableMethods,
+ } from "react-native-gesture-handler/ReanimatedSwipeable";
+ 
+-import { useDeleteVisit, useVisits, type Visit } from "@/src/api";
++import { useDeleteVisit, useUpdateVisitWord, useVisits, type Visit } from "@/src/api";
+ import { RoundedPhoto } from "@/src/components/photo";
+ import { ErrorState, LoadingScreen } from "@/src/components/ui";
+ import { fonts } from "@/src/fonts";
+@@ -185,6 +185,10 @@ function VisitRow({
+ }) {
+   const tint = tintForSlug(v.ritual_slug);
+   const ref = useRef<SwipeableMethods>(null);
++  const [editing, setEditing] = useState(false);
++  const [word, setWord] = useState(v.word ?? "");
++  const updateWord = useUpdateVisitWord();
++  const toast = useToast();
+   return (
+     <ReanimatedSwipeable
+       ref={ref}
+@@ -209,12 +213,36 @@ function VisitRow({
+         )}
+         {plain ? null : <Text style={styles.visitTitle}>{v.ritual_title}</Text>}
+         {/* Older visits hold one word, shown large; a few lines read smaller. */}
+-        {v.word ? (
++        {v.word && !editing ? (
+           <>
+             {plain ? null : <Text style={styles.wordsLabel}>YOUR WORDS</Text>}
+             <Text style={plain ? styles.entryWords : v.word.length > 24 ? styles.visitLines : styles.visitWord}>{v.word}</Text>
+           </>
+         ) : null}
++        {editing ? (
++          <>
++            <Text style={styles.wordsLabel}>YOUR WORDS</Text>
++            <TextInput value={word} onChangeText={setWord} multiline autoFocus style={styles.input} testID={`visit-edit-input-${v.id}`} />
++            <Pressable
++              testID={`visit-edit-save-${v.id}`}
++              onPress={() =>
++                updateWord.mutate(
++                  { id: v.id, word },
++                  { onSuccess: () => setEditing(false), onError: () => toast.show("Could not save. Try again.") },
++                )
++              }
++              style={({ pressed }) => [styles.solid, pressed && { opacity: 0.8 }]}
++            >
++              <Text style={styles.solidText}>{NOTES_TEXT.save}</Text>
++            </Pressable>
++          </>
++        ) : v.word ? (
++          <View style={styles.noteLinks}>
++            <Pressable testID={`visit-edit-${v.id}`} onPress={() => { setWord(v.word ?? ""); setEditing(true); }} hitSlop={8}>
++              <Text style={styles.link}>{NOTES_TEXT.edit} ›</Text>
++            </Pressable>
++          </View>
++        ) : null}
+         {v.tried && v.tried.length ? (
+           <>
+             <Text style={styles.wordsLabel}>YOU TRIED</Text>
+@@ -233,6 +261,23 @@ type Entry =
+   | { kind: "visit"; id: string; t: number; day: string; visit: Visit }
+   | { kind: "note"; id: string; t: number; day: string; note: Note };
+ 
++// Filters above the journal (tester 23 nov: after a month it gets busy). "All" shows everything.
++type JournalFilter = "all" | "visits" | "own" | "reflections" | "flowers";
++const JOURNAL_FILTERS: { key: JournalFilter; label: string }[] = [
++  { key: "all", label: "All" },
++  { key: "visits", label: "Visits" },
++  { key: "own", label: "Your own" },
++  { key: "reflections", label: "Reflections" },
++  { key: "flowers", label: "Flowers" },
++];
++function entryFilter(e: Entry): JournalFilter | null {
++  if (e.kind === "visit") return "visits";
++  if (e.note.kind === "own") return "own";
++  if (e.note.kind === "room") return "reflections";
++  if (e.note.kind === "flower" || e.note.kind === "page") return "flowers";
++  return null; // thought cards: only under All
++}
++
+ function localDay(iso: string, localDate?: string | null) {
+   if (localDate) return localDate;
+   const d = new Date(iso);
+@@ -385,7 +430,24 @@ function Journal({
+     setJustKept(true);
+   };
+ 
+-  const entries = journalEntries(visits, notes);
++  const allEntries = journalEntries(visits, notes);
++  const [filter, setFilter] = useState<JournalFilter>("all");
++  const entries = filter === "all" ? allEntries : allEntries.filter((e) => entryFilter(e) === filter);
++  // Days are folded; tap a day to open it (tester 23 nov). Kept in My House › opens its own day.
++  const [openDays, setOpenDays] = useState<Set<string>>(new Set());
++  useEffect(() => {
++    if (!openParam) return;
++    const hit = allEntries.find((e) => e.id === `n-${openParam}` || e.id === `v-${openParam}`);
++    if (hit) setOpenDays((d) => (d.has(hit.day) ? d : new Set(d).add(hit.day)));
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [openParam, allEntries.length]);
++  const toggleDay = (day: string) =>
++    setOpenDays((d) => {
++      const n = new Set(d);
++      if (n.has(day)) n.delete(day);
++      else n.add(day);
++      return n;
++    });
+ 
+   return (
+     <View testID="home-journal">
+@@ -430,13 +492,44 @@ function Journal({
+       </View>
+ 
+ 
+-      {entries.length === 0 ? (
++      {allEntries.length > 0 ? (
++        <View style={styles.filters} testID="journal-filters">
++          {JOURNAL_FILTERS.map((f) => {
++            const on = filter === f.key;
++            return (
++              <Pressable
++                key={f.key}
++                testID={`journal-filter-${f.key}`}
++                onPress={() => setFilter(f.key)}
++                accessibilityRole="button"
++                accessibilityState={{ selected: on }}
++                style={({ pressed }) => [styles.filterChip, on && styles.filterChipOn, pressed && { opacity: 0.7 }]}
++              >
++                <Text style={[styles.filterText, on && styles.filterTextOn]}>{f.label}</Text>
++              </Pressable>
++            );
++          })}
++        </View>
++      ) : null}
++
++      {allEntries.length === 0 ? (
+         <Text style={[styles.emptyText, { marginTop: 20 }]} testID="home-empty">{JOURNAL_TEXT.empty}</Text>
++      ) : entries.length === 0 ? (
++        <Text style={[styles.emptyText, { marginTop: 20 }]} testID="journal-filter-empty">{JOURNAL_TEXT.emptyFilter}</Text>
+       ) : (
+         groupByMonth(entries, (e: Entry) => e.day).map(([day, items]) => (
+           <View key={day} testID={`journal-day-${day}`} style={styles.dayBlock}>
+-            <DayHead day={day} styles={styles} />
+-            {items.map((e) => (
++            <Pressable
++              onPress={() => toggleDay(day)}
++              accessibilityRole="button"
++              accessibilityState={{ expanded: openDays.has(day) }}
++              testID={`journal-day-toggle-${day}`}
++              style={({ pressed }) => [styles.dayToggle, pressed && { opacity: 0.7 }]}
++            >
++              <DayHead day={day} styles={styles} />
++              <Feather name={openDays.has(day) ? "chevron-up" : "chevron-down"} size={20} color={T.ink} />
++            </Pressable>
++            {openDays.has(day) ? items.map((e) => (
+               <JournalRow key={e.id} e={e} styles={styles} startOpen={e.id === `n-${openParam}` || e.id === `v-${openParam}`}>
+                 {e.kind === "visit" ? (
+                   <VisitRow visit={e.visit} onRemove={onRemoveVisit} styles={styles} plain />
+@@ -457,7 +550,7 @@ function Journal({
+                   />
+                 )}
+               </JournalRow>
+-            ))}
++            )) : null}
+           </View>
+         ))
+       )}
+@@ -517,6 +610,11 @@ function NoteRow({ note: n, styles, onRead, plain }: { note: Note; styles: Retur
+             <Text style={styles.link}>{NOTES_TEXT.addWords} ›</Text>
+           </Pressable>
+         ) : null}
++        {n.words && !editing ? (
++          <Pressable testID={`note-edit-${n.id}`} onPress={() => { setWords(n.words ?? ""); setEditing(true); }} hitSlop={8}>
++            <Text style={styles.link}>{NOTES_TEXT.edit} ›</Text>
++          </Pressable>
++        ) : null}
+         {n.kind === "flower" || n.kind === "card" || n.kind === "room" || n.kind === "page" ? (
+           <Pressable onPress={onRead} hitSlop={8}>
+             <Text style={styles.link}>{NOTES_TEXT.readAgain} ›</Text>
+@@ -628,7 +726,7 @@ const useStyles = makeStyles((colors) => ({
+   visitTitle: { color: T.ink, fontFamily: fonts.display, fontSize: 18, marginTop: 2 },
+   wordsLabel: { color: T.ink, fontFamily: fonts.sansBold, fontSize: 11, letterSpacing: 1.5, marginTop: 6 },
+   noteQuestion: { color: T.ink, fontFamily: fonts.sansMedium, fontSize: 15, lineHeight: 21, marginTop: 2 },
+-  noteWords: { color: colors.onSurface, fontFamily: fonts.serifItalic, fontSize: 17, lineHeight: 25 },
++  noteWords: { color: colors.onSurface, fontFamily: fonts.serif, fontSize: 17, lineHeight: 25 },
+   noteLinks: { flexDirection: "row", alignItems: "center", gap: 18, marginTop: 8, flexWrap: "wrap" },
+   tabs: { flexDirection: "row", backgroundColor: T.band, borderRadius: 14, padding: 4, marginBottom: 20 },
+   tab: { flex: 1, alignItems: "center", paddingVertical: 9, borderRadius: 10 },
+@@ -636,7 +734,13 @@ const useStyles = makeStyles((colors) => ({
+   tabText: { color: T.ink, fontFamily: fonts.sansMedium, fontSize: 15 },
+   tabTextOn: { fontFamily: fonts.sansBold, opacity: 1 },
+   // Journal (22 nov): the day as the top of a diary page, then one folded line per entry.
+-  dayBlock: { marginTop: 24 },
++  dayBlock: { marginTop: 16 },
++  dayToggle: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingRight: 4 },
++  filters: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 20 },
++  filterChip: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, borderWidth: 1, borderColor: T.band },
++  filterChipOn: { backgroundColor: T.ink, borderColor: T.ink },
++  filterText: { color: T.ink, fontFamily: fonts.sansMedium, fontSize: 14 },
++  filterTextOn: { color: colors.surface },
+   dayHead: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 10 },
+   dayNum: { color: T.ink, fontFamily: fonts.display, fontSize: 38, lineHeight: 44 },
+   dayWeek: { color: T.ink, fontFamily: fonts.sansBold, fontSize: 11, letterSpacing: 1.6 },
+@@ -647,7 +751,7 @@ const useStyles = makeStyles((colors) => ({
+   rowBody: { paddingLeft: 16, paddingRight: 16, paddingBottom: 6, borderTopWidth: 1, borderTopColor: T.band, marginHorizontal: 0 },
+   entry: { paddingVertical: 12, gap: 4, backgroundColor: cardOf(T) },
+   entryKind: { color: T.ink, fontFamily: fonts.sansBold, fontSize: 11, letterSpacing: 1.2 },
+-  entryWords: { color: colors.onSurface, fontFamily: fonts.serifItalic, fontSize: 17, lineHeight: 26, marginTop: 2 },
++  entryWords: { color: colors.onSurface, fontFamily: fonts.serif, fontSize: 17, lineHeight: 26, marginTop: 2 },
+   // Journal (22 nov): a heading for the book, and the day above each group of entries.
+   journalTitle: { color: T.ink, fontFamily: fonts.display, fontSize: 24, marginBottom: 12 },
+   dayHeading: { color: T.ink, fontFamily: fonts.sansBold, fontSize: 14, letterSpacing: 0.3, marginTop: 22, marginBottom: 10 },
+@@ -705,7 +809,8 @@ const useStyles = makeStyles((colors) => ({
+   },
+   visitWord: {
+     color: colors.onSurface,
+-    fontFamily: fonts.serifItalic,
++    // Your own words in the regular letter, not italic (tester 23 nov: italic felt too busy).
++    fontFamily: fonts.serif,
+     fontSize: 26, lineHeight: 39 },
+   visitLines: {
+     color: colors.onSurface,
+diff --git a/frontend/app/(tabs)/index.tsx b/frontend/app/(tabs)/index.tsx
+index 865cdeb..5c01123 100644
+--- a/frontend/app/(tabs)/index.tsx
++++ b/frontend/app/(tabs)/index.tsx
+@@ -5,6 +5,8 @@ import { Pressable, Text, View } from "react-native";
+ import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
+ import { useSafeAreaInsets } from "react-native-safe-area-context";
+ 
++import { usesNativeTabs } from "@/src/navigation";
++
+ import { useToday } from "@/src/api";
+ import { RoundedPhoto } from "@/src/components/photo";
+ import { RoomCards } from "@/src/components/room-cards";
+@@ -64,7 +66,7 @@ export default function TodayScreen() {
+   return (
+     <View style={styles.screen}>
+       <KeyboardAwareScrollView
+-        contentContainerStyle={[styles.content, { paddingBottom: 40 }]}
++        contentContainerStyle={[styles.content, { paddingBottom: usesNativeTabs ? insets.bottom + 96 : 40 }]}
+         bottomOffset={24}
+         showsVerticalScrollIndicator={false}
+       >
+diff --git a/frontend/app/settings.tsx b/frontend/app/settings.tsx
+index 3a0e7fa..dd66dcc 100644
+--- a/frontend/app/settings.tsx
++++ b/frontend/app/settings.tsx
+@@ -5,6 +5,7 @@ import { Alert, Pressable, ScrollView, Text, View } from "react-native";
+ import { useSafeAreaInsets } from "react-native-safe-area-context";
+ 
+ import { useDeleteAllVisits, useVisits } from "@/src/api";
++import { deleteAllNotes, useNotes } from "@/src/notes";
+ import { useToast } from "@/src/components/toast";
+ import { fonts } from "@/src/fonts";
+ import {
+@@ -108,6 +109,14 @@ export default function SettingsScreen() {
+     [rhythm, busy],
+   );
+ 
++  const notes = useNotes();
++  const confirmRemoveNotes = () => {
++    Alert.alert("Delete all your notes?", "Your own notes, your answers in Reflections and the flowers you kept. Your visits stay. This can't be undone.", [
++      { text: "Keep", style: "cancel" },
++      { text: "Delete all", style: "destructive", onPress: async () => { if (!(await deleteAllNotes())) toast.show("Could not save. Try again."); } },
++    ]);
++  };
++
+   const confirmRemoveAll = () => {
+     Alert.alert("Delete all your visits?", "This can't be undone.", [
+       { text: "Keep", style: "cancel" },
+@@ -237,6 +246,15 @@ export default function SettingsScreen() {
+             </Pressable>
+           </View>
+         ) : null}
++
++        {notes.length > 0 ? (
++          <View style={styles.block}>
++            <Text style={styles.label}>YOUR NOTES</Text>
++            <Pressable testID="delete-all-notes" onPress={confirmRemoveNotes} hitSlop={10} style={({ pressed }) => pressed && { opacity: 0.6 }}>
++              <Text style={styles.delete}>Delete all my notes</Text>
++            </Pressable>
++          </View>
++        ) : null}
+       </ScrollView>
+     </View>
+   );
+diff --git a/frontend/src/api.ts b/frontend/src/api.ts
+index 4da929d..0d8911d 100644
+--- a/frontend/src/api.ts
++++ b/frontend/src/api.ts
+@@ -231,6 +231,19 @@ export function useSaveVisit() {
+   });
+ }
+ 
++// Change the words of a visit you kept (tester 23 nov: "no way to edit, only remove and write again").
++export function useUpdateVisitWord() {
++  const qc = useQueryClient();
++  return useMutation({
++    mutationFn: async (input: { id: string; word: string }) => {
++      await changeVisits((visits) => visits.map((v) => (v.id === input.id ? { ...v, word: input.word.trim() } : v)));
++    },
++    onSuccess: () => {
++      qc.invalidateQueries({ queryKey: ["visits"] });
++    },
++  });
++}
++
+ export function useDeleteVisit() {
+   const qc = useQueryClient();
+   return useMutation({
+diff --git a/frontend/src/care/CareForHome.tsx b/frontend/src/care/CareForHome.tsx
+index 3e860b9..a0a69e3 100644
+--- a/frontend/src/care/CareForHome.tsx
++++ b/frontend/src/care/CareForHome.tsx
+@@ -71,6 +71,17 @@ import { useCare } from "./store";
+ export { CARE } from "./colors";
+ 
+ // Simpler Care (20 nov): no day plan, no Daily Care block, no minutes. See CARE_CONFIG.
++// Habits you keep (weekly "Kept up this week?") hidden (tester/Emjee 23 nov: a tick you could
++// not undo, that kept nothing you could look back on). The data stays, so it can come back.
++const SHOW_HABITS = false;
++const SHOW_LEVELS = false;
++// What each starting point does, in one line (tester 23 nov: the difference wasn't clear).
++const LEVEL_LINE: Record<Level, string> = {
++  Basic: "Same tasks, a little less often.",
++  Regular: "Same tasks, at the recommended pace.",
++  Thorough: "Same tasks, more often.",
++};
++
+ const PLANNER = CARE_CONFIG.PLANNER_ENABLED;
+ // The tasks for the whole house (library key "house"), shown under the room tiles (20 nov).
+ const HOUSE_ROOM = "house";
+@@ -104,6 +115,11 @@ export function CareForHome({
+   // The big Heritage card lives in its own tab; Today shows one small line (19 nov, route B).
+   const showHeritageCard = section === undefined || section === "heritage";
+   const { state, update } = useCare();
++  // Levels are hidden (23 nov): whoever was on Basic or Thorough goes back to the recommended
++  // pace. Tempos you chose yourself stay.
++  useEffect(() => {
++    if (!SHOW_LEVELS && state && state.level !== "Regular") update((st) => setLevel(st, "Regular"));
++  }, [state?.level, update]);
+   const [now, setNow] = useState(clock);
+   const [room, setRoom] = useState<string>("house");
+   // What shows under today's plan: nothing extra, one room, or every open task.
+@@ -460,6 +476,10 @@ export function CareForHome({
+         {adjust ? (
+           <>
+             <Text style={s.setHead}>How often tasks come back</Text>
++            {/* Basic, Regular and Thorough hidden (tester/Emjee 23 nov): everyone starts from the
++                recommended pace and sets their own per task under ⋯ › How often. */}
++            {SHOW_LEVELS ? (
++              <>
+             <View style={s.lvl}>
+               <Text style={s.lvlLabel}>Start from</Text>
+               <View style={s.lvlBtns}>
+@@ -469,7 +489,8 @@ export function CareForHome({
+                     testID={`care-level-${l}`}
+                     onPress={() => {
+                       update((st) => setLevel(st, l));
+-                      if (Object.keys(state.custom).length) onToast({ text: "Your own changes stay." });
++                      // Something you can see after tapping (tester 23 nov: "nothing happens").
++                      onToast({ text: `${LEVEL_LINE[l]}${Object.keys(state.custom).length ? " Your own changes stay." : ""}` });
+                     }}
+                     style={[s.lvlBtn, state.level === l && s.chipOn]}
+                   >
+@@ -478,8 +499,11 @@ export function CareForHome({
+                 ))}
+               </View>
+             </View>
++            <Text style={[s.lvlNow, { marginTop: 8 }]} testID="care-level-line">{LEVEL_LINE[state.level]}</Text>
++              </>
++            ) : null}
+             <Text style={[s.quiet, { fontSize: 14, marginTop: 6 }]}>
+-              Or use ⋯ on a task to give it its own tempo. Basic, Regular and Thorough never slow down tasks for a clean and safe home, but a tempo you choose yourself comes first.
++              Every task starts at the recommended pace. Use ⋯ › How often on a task to give it your own, and change it again whenever you like.
+             </Text>
+ 
+             {PLANNER ? (
+@@ -1009,7 +1033,7 @@ export function CareForHome({
+                 const inG = (id: string) => extraGroup(state, id) === g;
+                 const list = [...mine.filter((x) => inG(x.t.id)), ...others.filter((x) => inG(x.t.id))];
+                 const need = R.need.filter((t) => inG(t.id));
+-                const habits = g === "home" ? R.habits : [];
++                const habits = SHOW_HABITS && g === "home" ? R.habits : [];
+                 if (!list.length && !need.length && !habits.length) return null;
+                 return (
+                   <View key={g} testID={`care-extra-${g}`}>
+@@ -1045,6 +1069,7 @@ export function CareForHome({
+                                 menuOpen={menu === t.id}
+                                 editOpen={false}
+                                 onDone={() => done(t.id, 1, false)}
++                                onUndo={() => update((st) => undoDone(st, t.id))}
+                                 onMenu={() => setMenu(menu === t.id ? null : t.id)}
+                                 onNotToday={() => {
+                                   setMenu(null);
+@@ -1143,6 +1168,7 @@ export function CareForHome({
+                           menuOpen={menu === t.id}
+                           editOpen={false}
+                           onDone={() => done(t.id, 1, false)}
++                                onUndo={() => update((st) => undoDone(st, t.id))}
+                           onMenu={() => setMenu(menu === t.id ? null : t.id)}
+                           onNotToday={() => {
+                             setMenu(null);
+@@ -1159,7 +1185,7 @@ export function CareForHome({
+                       </View>
+                     </>
+                   ) : null}
+-                  {R.habits.length ? (
++                  {SHOW_HABITS && R.habits.length ? (
+                     <>
+                       <Text style={s.boxCap}>HABITS YOU KEEP</Text>
+                       <View style={s.habits}>
+@@ -1248,6 +1274,7 @@ export function CareForHome({
+                         menuOpen={menu === t.id}
+                         editOpen={false}
+                         onDone={() => done(t.id, 1, false)}
++                                onUndo={() => update((st) => undoDone(st, t.id))}
+                         onMenu={() => setMenu(menu === t.id ? null : t.id)}
+                         onNotToday={() => {
+                           setMenu(null);
+@@ -1264,7 +1291,7 @@ export function CareForHome({
+                 </>
+               ) : null}
+ 
+-              {R.habits.length ? (
++              {SHOW_HABITS && R.habits.length ? (
+                 <>
+                   <View style={s.lh}>
+                     <Text style={s.lhTitle}>Habits you keep</Text>
+@@ -1419,9 +1446,10 @@ function TaskRow(p: {
+           testID={`care-done-${id}`}
+           accessibilityRole="checkbox"
+           accessibilityLabel={`Done: ${p.name}`}
+-          accessibilityState={{ checked: dt, disabled: !(ok && !sz) }}
+-          disabled={!(ok && !sz)}
+-          onPress={p.onDone}
++          accessibilityState={{ checked: dt, disabled: !(ok && !sz) && !(dt && p.onUndo) }}
++          // Done today: tap the circle again to undo it (tester 23 nov), not only via ⋯.
++          disabled={!(ok && !sz) && !(dt && p.onUndo)}
++          onPress={dt && p.onUndo ? p.onUndo : p.onDone}
+           hitSlop={8}
+           style={[s.circ, dt && s.circOn, !(ok && !sz) && !dt && s.circOff, compact && s.circSmall]}
+         >
+@@ -1508,12 +1536,8 @@ function TaskRow(p: {
+               <Text style={s.menuText}>Change the wording</Text>
+             </Pressable>
+           ) : null}
+-          {p.kind === "care" && !p.rhythm && p.onReplace && !id.startsWith("own.") ? (
+-            <Pressable testID={`care-replace-${id}`} onPress={p.onReplace} style={s.menuBtn}>
+-              <Text style={s.menuText}>Replace with my own</Text>
+-              <Text style={s.menuSmall}>This one goes off your list; you can bring it back</Text>
+-            </Pressable>
+-          ) : null}
++          {/* "Replace with my own" removed (tester 23 nov): it did the same as Change the wording, and
++              when tapped nothing seemed to happen. Take off my list + Add a task covers it. */}
+           {p.kind === "care" && !p.rhythm && p.onRemove ? (
+             <Pressable testID={`care-remove-${id}`} onPress={p.onRemove} style={s.menuBtn}>
+               <Text style={s.menuText}>{id.startsWith("own.") ? "Remove this task" : "Take off my list"}</Text>
+@@ -1556,7 +1580,7 @@ function TaskRow(p: {
+           ))}
+           {own ? (
+             <Pressable onPress={() => p.onTempo?.(null)} style={[s.editBtn, s.editReset]}>
+-              <Text style={s.editText}>{`Use ${state.level} again`}</Text>
++              <Text style={s.editText}>{SHOW_LEVELS ? `Use ${state.level} again` : "Use the recommended pace again"}</Text>
+             </Pressable>
+           ) : null}
+         </View>
+@@ -1790,6 +1814,7 @@ const s = StyleSheet.create({
+   lvlLabel: { fontFamily: fonts.sans, fontSize: 14, color: CARE.soft },
+   lvlBtns: { flexDirection: "row", gap: 6 },
+   lvlBtn: { borderWidth: 1, borderColor: CARE.band, backgroundColor: CARE.card, borderRadius: 12, paddingVertical: 5, paddingHorizontal: 10 },
++  lvlNow: { fontFamily: fonts.sansMedium, fontSize: 15, color: CARE.ink },
+   lvlBtnText: { fontFamily: fonts.sansMedium, fontSize: 14, color: CARE.ink },
+   herc: {
+     flexDirection: "row",
+diff --git a/frontend/src/care/CareSetup.tsx b/frontend/src/care/CareSetup.tsx
+index cdbb380..a3487d8 100644
+--- a/frontend/src/care/CareSetup.tsx
++++ b/frontend/src/care/CareSetup.tsx
+@@ -233,6 +233,8 @@ export function CareSetup({
+     },
+     {
+       // How often things come back. Basic hygiene stays the same at every level.
++      // Hidden (tester/Emjee 23 nov): everyone starts from the recommended pace.
++      levels: true,
+       head: "Your pace",
+       title: "How often should things come back?",
+       line: "Basic means a little less upkeep, never less hygiene. Fresh sheets every week stay the same at every level. You can change this any time.",
+@@ -242,7 +244,9 @@ export function CareSetup({
+         </View>
+       ),
+     },
+-  ].filter((x: { planner?: boolean }) => CARE_CONFIG.PLANNER_ENABLED || !x.planner);
++  ]
++    .filter((x: { planner?: boolean }) => CARE_CONFIG.PLANNER_ENABLED || !x.planner)
++    .filter((x: { levels?: boolean }) => !x.levels);
+   const st = steps[step];
+   const blocked = (step === 1 && rooms.length === 0) || (step === 4 && !chosenHousehold);
+   const last = step === steps.length - 1;
+diff --git a/frontend/src/care/rooms.ts b/frontend/src/care/rooms.ts
+index c398454..46686eb 100644
+--- a/frontend/src/care/rooms.ts
++++ b/frontend/src/care/rooms.ts
+@@ -341,11 +341,9 @@ export const CARE_ROOMS: CareRoom[] = [
+         "id": "house.need.clean-the-stove-glass",
+         "name": "Clean the glass of the stove or fireplace",
+         "when": "stove-glass"
+-      },
+-      {
+-        "id": "house.need.replace-a-burned-out-bulb",
+-        "name": "Replace a burned-out bulb"
+       }
++      // "Replace a burned-out bulb" removed (tester/Emjee 23 nov): you do it when it breaks,
++      // not as housekeeping to keep up.
+     ],
+     "habits": [
+       {
+diff --git a/frontend/src/fonts.ts b/frontend/src/fonts.ts
+index f861ab7..d8da879 100644
+--- a/frontend/src/fonts.ts
++++ b/frontend/src/fonts.ts
+@@ -8,7 +8,8 @@ export const fonts = {
+   serif: "Lora-Regular",
+   serifMedium: "Montserrat-Medium",
+   serifSemiBold: "Montserrat-SemiBold",
+-  serifItalic: "Lora-Italic",
++  // No italic in the app (Emjee 23 nov: too busy). The key stays so every screen keeps working.
++  serifItalic: "Lora-Regular",
+   display: "Montserrat-Medium",
+   sans: "SourceSans3-Regular",
+   sansMedium: "SourceSans3-SemiBold",
+diff --git a/frontend/src/my-home.ts b/frontend/src/my-home.ts
+index 232771e..99fdeed 100644
+--- a/frontend/src/my-home.ts
++++ b/frontend/src/my-home.ts
+@@ -13,6 +13,8 @@ export const JOURNAL_TEXT = {
+   // On a Reflections page, above what you wrote there before.
+   earlier: "WHAT YOU WROTE HERE",
+   empty: "There's nothing here yet. Write a few lines above, or tap Keep this visit once you've finished one.",
++  // When a filter finds nothing (23 nov).
++  emptyFilter: "Nothing of this kind yet.",
+ };
+ 
+ // Notes: writing without a visit. Questions start from the house, ask what you see or do
+@@ -44,6 +46,8 @@ export const NOTES_TEXT = {
+   empty: "Nothing here yet.",
+   addWords: "Add what you noticed",
+   save: "Keep",
++  // Changing words you already wrote (tester 23 nov).
++  edit: "Edit",
+   readAgain: "Read it again",
+ };
+ 
+diff --git a/frontend/src/notes.ts b/frontend/src/notes.ts
+index 1281e94..60b9c57 100644
+--- a/frontend/src/notes.ts
++++ b/frontend/src/notes.ts
+@@ -51,6 +51,12 @@ export async function deleteNote(id: string): Promise<boolean> {
+   return change((notes) => notes.filter((x) => x.id !== id));
+ }
+ 
++// Settings › Delete all my notes (tester 23 nov): your own notes, Reflections answers, flowers
++// and thought cards you kept. Visits have their own button.
++export async function deleteAllNotes(): Promise<boolean> {
++  return change(() => []);
++}
++
+ export function useNotes() {
+   const [notes, setNotes] = useState<Note[]>([]);
+   const load = useCallback(async () => setNotes(await read()), []);
