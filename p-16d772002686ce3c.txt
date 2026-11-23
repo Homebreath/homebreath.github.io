@@ -591,10 +591,10 @@ index 0000000..e7fbb31
 +  room: { color: CARE.muted, fontFamily: fonts.sans, fontSize: 13, marginTop: 1 },
 +}));
 diff --git a/frontend/src/care/my-rooms.ts b/frontend/src/care/my-rooms.ts
-index 67ff303..6a5b272 100644
+index 67ff303..791990a 100644
 --- a/frontend/src/care/my-rooms.ts
 +++ b/frontend/src/care/my-rooms.ts
-@@ -9,6 +9,24 @@ import { type CareState, type PlanCandidate, type RevisitRoom, copyTaskId, hasFe
+@@ -9,6 +9,25 @@ import { type CareState, type PlanCandidate, type RevisitRoom, copyTaskId, hasFe
  // but not on your list yet (off by default, or for something you didn't tick).
  export type MyRoom = CareRoom & { own?: boolean; removedTasks: CareTask[]; moreTasks: CareTask[] };
  
@@ -604,10 +604,8 @@ index 67ff303..6a5b272 100644
 +  "laundry.need.put-away-the-clean-laundry": 3,
 +  "laundry.need.empty-the-dryer-lint-screen": 3,
 +  "house.need.clean-the-stove-glass": 14,
-+  "kitchen.need.run-the-dishwasher": 1,
-+  "kitchen.need.empty-the-dishwasher": 1,
++
 +  "kitchen.need.take-out-the-rubbish": 3,
-+  "kitchen.need.do-the-dishes-by-hand": 1,
 +  "bathroom.need.fresh-towels": 4,
 +  "bathroom.need.restock-toilet-paper-and-soap": 7,
 +  "bathroom.need.unclog-the-shower-drain": 30,
@@ -616,15 +614,18 @@ index 67ff303..6a5b272 100644
 +  "powder.need.restock-toilet-paper-and-soap": 7,
 +};
 +
++// Daily kitchen jobs that The Rhythm already holds (Closing the kitchen): not on the list (Emjee 23 nov).
++const NEED_DROP = new Set(["kitchen.need.run-the-dishwasher", "kitchen.need.empty-the-dishwasher", "kitchen.need.do-the-dishes-by-hand"]);
++
  export function allRooms(s: CareState): MyRoom[] {
    // Your own minutes (Look over your rooms) replace the library's.
    const withMinutes = <T extends { id: string; min?: number }>(t: T): T => (s.minutes[t.id] ? { ...t, min: s.minutes[t.id] } : t);
-@@ -25,10 +43,21 @@ export function allRooms(s: CareState): MyRoom[] {
+@@ -25,10 +44,21 @@ export function allRooms(s: CareState): MyRoom[] {
          ...lib.filter((t) => r.key === RHYTHM_ROOM || isOn(s, t)).map((t) => (s.renamed[t.id] ? { ...t, name: s.renamed[t.id] } : t)),
          // Own tasks under Extra tasks carry their group: "house:pets" (20 nov).
          ...s.ownTasks.filter((t) => t.room === key || (key === "house" && t.room.startsWith("house:"))),
 +        ...r.need
-+          .filter((n) => !n.when || hasFeature(s, n.when))
++          .filter((n) => !NEED_DROP.has(n.id) && (!n.when || hasFeature(s, n.when)))
 +          .map((n) => ({ id: id(n.id), name: s.renamed[id(n.id)] ?? n.name, days: NEED_DAYS[n.id] ?? 7 }))
 +          .filter((t) => !s.removed.includes(t.id)),
        ].map(withMinutes),
@@ -643,6 +644,46 @@ index 67ff303..6a5b272 100644
        moreTasks: r.key === RHYTHM_ROOM ? [] : lib.filter((t) => !isOn(s, t) && !s.removed.includes(t.id)),
      };
    };
+diff --git a/frontend/src/care/rooms.ts b/frontend/src/care/rooms.ts
+index 46686eb..8e6633e 100644
+--- a/frontend/src/care/rooms.ts
++++ b/frontend/src/care/rooms.ts
+@@ -487,6 +487,8 @@ export const CARE_ROOMS: CareRoom[] = [
+     "care": [
+       {
+         "id": "kitchen.wipe-the-counter",
++        // Off (Emjee 23 nov): part of The Rhythm already, so not a daily task of its own.
++        "off": true,
+         "name": "Wipe the kitchen counter",
+         "days": 1,
+         "levels": [
+@@ -499,6 +501,8 @@ export const CARE_ROOMS: CareRoom[] = [
+       },
+       {
+         "id": "kitchen.wipe-the-stovetop",
++        // Off (Emjee 23 nov): part of The Rhythm already, so not a daily task of its own.
++        "off": true,
+         "name": "Wipe the stovetop",
+         "days": 1,
+         "levels": [
+@@ -511,6 +515,8 @@ export const CARE_ROOMS: CareRoom[] = [
+       },
+       {
+         "id": "kitchen.wipe-the-sink",
++        // Off (Emjee 23 nov): part of The Rhythm already, so not a daily task of its own.
++        "off": true,
+         "name": "Wipe the kitchen sink",
+         "days": 1,
+         "levels": [
+@@ -1089,6 +1095,8 @@ export const CARE_ROOMS: CareRoom[] = [
+     "care": [
+       {
+         "id": "bathroom.wipe-the-sink",
++        // Off (Emjee 23 nov): part of The Rhythm already, so not a daily task of its own.
++        "off": true,
+         "name": "Wipe the bathroom sink",
+         "days": 1,
+         "levels": [
 diff --git a/frontend/src/care/rules.test.mjs b/frontend/src/care/rules.test.mjs
 index 8b8e9b9..67a0213 100644
 --- a/frontend/src/care/rules.test.mjs
