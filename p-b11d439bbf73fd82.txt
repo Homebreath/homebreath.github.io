@@ -161,7 +161,7 @@ index ec8f1c3..0ddfa19 100644
      </View>
    );
 diff --git a/frontend/app/(tabs)/home.tsx b/frontend/app/(tabs)/home.tsx
-index 3fc74b8..91acd1f 100644
+index 3fc74b8..133bf4e 100644
 --- a/frontend/app/(tabs)/home.tsx
 +++ b/frontend/app/(tabs)/home.tsx
 @@ -18,7 +18,7 @@ import { JOURNAL_TEXT, NOTE_QUESTIONS, NOTES_TEXT } from "@/src/my-home";
@@ -191,6 +191,19 @@ index 3fc74b8..91acd1f 100644
              <Pressable
                testID={`visit-edit-save-${v.id}`}
                onPress={() =>
+@@ -363,7 +363,11 @@ function JournalRow({ e, children, styles, startOpen }: { e: Entry; children: Re
+       >
+         <View style={{ flex: 1, gap: 3 }}>
+           <Text style={[styles.entryKind, { color: mark }]}>{entryKind(e)}</Text>
+-          <Text style={styles.rowKeyword} numberOfLines={open ? undefined : 1}>{entryKeyword(e)}</Text>
++          {/* Your own words: the first few show while folded; once open they are not repeated
++              above the full text (tester 23 nov, "Bla bla bla" twice). */}
++          {open && e.kind === "note" && (e.note.kind === "own" || e.note.kind === "room" || e.note.kind === "page") ? null : (
++            <Text style={styles.rowKeyword} numberOfLines={open ? undefined : 1}>{entryKeyword(e)}</Text>
++          )}
+         </View>
+         <Feather name={open ? "chevron-up" : "chevron-down"} size={20} color={mark} />
+       </Pressable>
 diff --git a/frontend/app/(tabs)/index.tsx b/frontend/app/(tabs)/index.tsx
 index 5c01123..9e2d9b4 100644
 --- a/frontend/app/(tabs)/index.tsx
