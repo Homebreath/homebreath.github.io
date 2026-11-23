@@ -455,10 +455,10 @@ index fba282d..521f8f3 100644
  const CLOSING = "See what you notice and keep what feels true.";
 diff --git a/frontend/src/care/WeekAtHome.tsx b/frontend/src/care/WeekAtHome.tsx
 new file mode 100644
-index 0000000..d4c9854
+index 0000000..11d729e
 --- /dev/null
 +++ b/frontend/src/care/WeekAtHome.tsx
-@@ -0,0 +1,69 @@
+@@ -0,0 +1,102 @@
 +// This week at home (Emjee 23 nov): on Home, every Housekeeping task that comes around in the
 +// next seven days, the soonest first: "today", "tomorrow", "in 3 days". Ticking a task off in
 +// Housekeeping removes it here at once (both read the same saved state). A task you never did
@@ -472,7 +472,7 @@ index 0000000..d4c9854
 +import { makeStyles } from "@/src/theme";
 +
 +import { CARE } from "./colors";
-+import { weekTasks, whenText } from "./week";
++import { weekTasks } from "./week";
 +import { useCare, useHouses } from "./store";
 +
 +export function WeekAtHome() {
@@ -482,6 +482,7 @@ index 0000000..d4c9854
 +  const styles = useStyles();
 +  // Re-read the clock now and then, so "tomorrow" becomes "today" without a restart.
 +  const [now, setNow] = useState(Date.now());
++  const [open, setOpen] = useState<Set<number>>(new Set()); // days you flipped from their start
 +  useEffect(() => {
 +    const t = setInterval(() => setNow(Date.now()), 60000);
 +    return () => clearInterval(t);
@@ -489,31 +490,60 @@ index 0000000..d4c9854
 +  if (!state || !state.setup) return null;
 +  const tasks = weekTasks(state, now);
 +  const houseName = houses && houses.list.length > 1 ? houses.list.find((h) => h.id === houses.active)?.name : null;
++  // Per day, folded like the journal (Emjee 23 nov: 45 tasks in one list was far too long).
++  const days: [number, typeof tasks][] = [];
++  for (const t of tasks) {
++    const last = days[days.length - 1];
++    if (last && last[0] === t.diff) last[1].push(t);
++    else days.push([t.diff, [t]]);
++  }
++  const isOpen = (d: number) => (open.has(d) ? !opened0(d) : opened0(d));
 +  return (
-+    <Pressable
-+      testID="week-at-home"
-+      onPress={() => router.push("/care" as never)}
-+      style={({ pressed }) => [styles.card, pressed && { opacity: 0.85 }]}
-+    >
-+      <View style={styles.head}>
++    <View style={styles.card} testID="week-at-home">
++      <Pressable onPress={() => router.push("/care" as never)} hitSlop={8} style={({ pressed }) => [styles.head, pressed && { opacity: 0.7 }]}>
 +        <Text style={styles.label}>{houseName ? `THIS WEEK · ${houseName.toUpperCase()}` : "THIS WEEK AT HOME"}</Text>
 +        <Feather name="chevron-right" size={18} color={CARE.ink} />
-+      </View>
++      </Pressable>
 +      {tasks.length === 0 ? (
 +        <Text style={styles.empty}>Nothing coming up this week.</Text>
 +      ) : (
-+        tasks.map((t, i) => (
-+          <View key={t.id} style={[styles.row, i > 0 && styles.rowLine]} testID={`week-task-${t.id}`}>
-+            <View style={{ flex: 1 }}>
-+              <Text style={styles.name}>{t.name}</Text>
-+              <Text style={styles.room}>{t.room}</Text>
-+            </View>
-+            <Text style={[styles.when, t.diff === 0 && styles.whenToday]}>{whenText(t.diff)}</Text>
++        days.map(([d, list], i) => (
++          <View key={d} style={i > 0 && styles.rowLine}>
++            <Pressable
++              testID={`week-day-${d}`}
++              accessibilityRole="button"
++              accessibilityState={{ expanded: isOpen(d) }}
++              onPress={() => setOpen((o) => { const n = new Set(o); if (n.has(d)) n.delete(d); else n.add(d); return n; })}
++              style={({ pressed }) => [styles.dayRow, pressed && { opacity: 0.7 }]}
++            >
++              <Text style={[styles.dayName, d === 0 && styles.whenToday]}>{dayName(d, now)}</Text>
++              <Text style={styles.count}>{list.length === 1 ? "1 task" : `${list.length} tasks`}</Text>
++              <Feather name={isOpen(d) ? "chevron-up" : "chevron-down"} size={18} color={CARE.ink} />
++            </Pressable>
++            {isOpen(d)
++              ? list.map((t) => (
++                  <Pressable key={t.id} onPress={() => router.push("/care" as never)} style={styles.row} testID={`week-task-${t.id}`}>
++                    <Text style={styles.name}>{t.name}</Text>
++                    <Text style={styles.room}>{t.room}</Text>
++                  </Pressable>
++                ))
++              : null}
 +          </View>
 +        ))
 +      )}
-+    </Pressable>
++    </View>
 +  );
++}
++
++// Today starts open, the other days folded.
++const opened0 = (d: number) => d === 0;
++
++function dayName(diff: number, now: number): string {
++  if (diff === 0) return "Today";
++  if (diff === 1) return "Tomorrow";
++  const d = new Date(now);
++  d.setDate(d.getDate() + diff);
++  return d.toLocaleDateString("en-US", { weekday: "long" });
 +}
 +
 +const useStyles = makeStyles(() => ({
@@ -521,7 +551,10 @@ index 0000000..d4c9854
 +  head: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 },
 +  label: { color: CARE.ink, fontFamily: fonts.sansBold, fontSize: 12, letterSpacing: 1.4 },
 +  empty: { color: CARE.muted, fontFamily: fonts.serif, fontSize: 15, lineHeight: 22, marginTop: 4 },
-+  row: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 9 },
++  row: { paddingVertical: 7, paddingLeft: 2 },
++  dayRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 11 },
++  dayName: { flex: 1, color: CARE.ink, fontFamily: fonts.sansMedium, fontSize: 15 },
++  count: { color: CARE.muted, fontFamily: fonts.sans, fontSize: 14 },
 +  rowLine: { borderTopWidth: 1, borderTopColor: CARE.band },
 +  name: { color: CARE.ink, fontFamily: fonts.serif, fontSize: 16, lineHeight: 22 },
 +  room: { color: CARE.muted, fontFamily: fonts.sans, fontSize: 13, marginTop: 1 },
