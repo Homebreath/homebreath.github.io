@@ -1,0 +1,56 @@
+diff --git a/frontend/app.json b/frontend/app.json
+index 42dca14..03d1282 100644
+--- a/frontend/app.json
++++ b/frontend/app.json
+@@ -11,7 +11,8 @@
+       "supportsTablet": false,
+       "bundleIdentifier": "com.homebreath.app",
+       "infoPlist": {
+-        "RCTAsyncStorageExcludeFromBackup": false
++        "RCTAsyncStorageExcludeFromBackup": false,
++        "ITSAppUsesNonExemptEncryption": false
+       }
+     },
+     "android": {
+diff --git a/frontend/app/paywall.tsx b/frontend/app/paywall.tsx
+index 5954c9b..150780f 100644
+--- a/frontend/app/paywall.tsx
++++ b/frontend/app/paywall.tsx
+@@ -1,7 +1,7 @@
+ import Feather from "@react-native-vector-icons/feather";
+ import { useLocalSearchParams, useRouter } from "expo-router";
+ import { useEffect, useState } from "react";
+-import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from "react-native";
++import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, Text, View } from "react-native";
+ import { useSafeAreaInsets } from "react-native-safe-area-context";
+ 
+ import { RoundedPhoto } from "@/src/components/photo";
+@@ -11,6 +11,10 @@ import { storePrices } from "@/src/purchases";
+ import { useSubscription, type Plan } from "@/src/subscription";
+ import { makeStyles, useTheme } from "@/src/theme";
+ 
++// Apple's standard licence agreement (EULA) and the privacy policy on the website.
++const TERMS_URL = "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/";
++const PRIVACY_URL = "https://homebreath.github.io/privacy/";
++
+ export default function PaywallScreen() {
+   const params = useLocalSearchParams<{
+     slug?: string;
+@@ -150,7 +154,7 @@ export default function PaywallScreen() {
+           <Text style={styles.footerDot}>·</Text>
+           <Pressable
+             testID="paywall-terms"
+-            onPress={() => toast.show("Terms open on the web.")}
++            onPress={() => Linking.openURL(TERMS_URL)}
+             hitSlop={8}
+           >
+             <Text style={styles.footerLink}>Terms of Use</Text>
+@@ -158,7 +162,7 @@ export default function PaywallScreen() {
+           <Text style={styles.footerDot}>·</Text>
+           <Pressable
+             testID="paywall-privacy"
+-            onPress={() => toast.show("Privacy Policy opens on the web.")}
++            onPress={() => Linking.openURL(PRIVACY_URL)}
+             hitSlop={8}
+           >
+             <Text style={styles.footerLink}>Privacy Policy</Text>
