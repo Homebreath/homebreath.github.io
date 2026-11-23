@@ -557,19 +557,17 @@ index 0000000..24ad698
 +export const whenText = (diff: number) => (diff <= 0 ? "today" : diff === 1 ? "tomorrow" : `in ${diff} days`);
 +
 diff --git a/frontend/src/navigation.ts b/frontend/src/navigation.ts
-index 0e2c09a..c4e1761 100644
+index 0e2c09a..d8369ca 100644
 --- a/frontend/src/navigation.ts
 +++ b/frontend/src/navigation.ts
 @@ -2,5 +2,14 @@ import { Platform } from "react-native";
  
  // iOS 26+ gets native tabs (Liquid Glass). Older iOS, Android and web use the
  // classic JS <Tabs>. "unstable" refers only to the import path.
--export const usesNativeTabs =
--  Platform.OS === "ios" && parseInt(String(Platform.Version), 10) >= 26;
-+// Off for everyone (Emjee 23 nov): the floating bar lay over the text. Every iPhone now gets the
-+// fixed bar under the content. Set back to the line below to bring the floating bar back.
-+// Platform.OS === "ios" && parseInt(String(Platform.Version), 10) >= 26;
-+export const usesNativeTabs = false && Platform.OS === "ios";
++// Emjee 23 nov: keep the floating Liquid Glass bar as it is (like Strava); the space below
++// the last item (tabBarSpace) makes sure nothing stays hidden under it.
+ export const usesNativeTabs =
+   Platform.OS === "ios" && parseInt(String(Platform.Version), 10) >= 26;
 +
 +// Room under the last item for the floating tab bar on iOS 26+ (tester 23 nov: the last card
 +// stayed under the bar). The safe-area inset can read 0 inside native tabs, so never count on
